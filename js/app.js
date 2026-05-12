@@ -77,6 +77,12 @@ function renderTasks() {
                     <span class="status-badge" style="background:rgba(255,255,255,0.05); font-size:10px;">${t.status}</span>
                     <span style="font-size:11px; color:var(--muted);">Fee: <b style="color:#22c55e;">$${t.editorFee}</b></span>
                 </div>
+                ${t.rawAssets ? `
+                <div style="margin-top:15px; background:rgba(56,189,248,0.05); padding:10px; border-radius:10px; border:1px solid rgba(56,189,248,0.1);">
+                    <div style="font-size:10px; color:var(--accent); font-weight:800; margin-bottom:5px;">RAW ASSETS FROM CLIENT</div>
+                    <a href="${t.rawAssets}" target="_blank" style="font-size:12px; color:#fff; text-decoration:none;">🔗 Open Footage Link</a>
+                </div>
+                ` : ''}
             </div>
             <div style="display:flex; flex-direction:column; gap:10px;">
                 <button class="upload-btn" onclick="uploadWork('${t.id}')" style="background:var(--accent); color:#000; border:none; padding:12px 24px; border-radius:12px; font-weight:800; cursor:pointer;">↑ SUBMIT WORK</button>
