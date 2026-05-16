@@ -63,48 +63,98 @@ function startListeners(email) {
 function renderTasks() {
     const list = document.getElementById('task-list');
     if(myTasks.length === 0) {
-        list.innerHTML = '<div style="padding:60px; text-align:center; color:var(--muted);">No projects assigned to you yet.</div>';
+        list.innerHTML = '<div style="padding:100px; text-align:center; color:var(--muted); font-weight:600;">No assignments found in your queue.</div>';
         return;
     }
 
     list.innerHTML = myTasks.map(t => `
-        <div class="task-card" style="background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:24px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
-            <div class="task-info">
-                <div style="font-size:12px; color:var(--accent); font-weight:800; margin-bottom:5px;">#${t.id.slice(-6).toUpperCase()}</div>
-                <h4 style="font-size:18px; font-weight:800; margin-bottom:5px;">${t.name}</h4>
-                <p style="font-size:13px; color:var(--muted);">Client: ${t.clientName} | Deadline: <span style="color:#fff;">${t.deadline || 'TBA'}</span></p>
-                <div style="margin-top:15px; display:flex; gap:10px; align-items:center;">
-                    <span class="status-badge" style="background:rgba(255,255,255,0.05); font-size:10px;">${t.status}</span>
-                    <span style="font-size:11px; color:var(--muted);">Fee: <b style="color:#22c55e;">$${t.editorFee}</b></span>
-                </div>
-                ${t.rawAssets ? `
-                <div style="margin-top:15px; background:rgba(56,189,248,0.05); padding:10px; border-radius:10px; border:1px solid rgba(56,189,248,0.1);">
-                    <div style="font-size:10px; color:var(--accent); font-weight:800; margin-bottom:5px;">RAW ASSETS FROM CLIENT</div>
-                    <a href="${t.rawAssets}" target="_blank" style="font-size:12px; color:#fff; text-decoration:none;">🔗 Open Footage Link</a>
-                </div>
-                ` : ''}
+        <div class="task-card" id="task-${t.id}">
+            <div class="upload-area" id="upload-${t.id}" onclick="triggerUpload('${t.id}')">
+                <span id="icon-${t.id}">+</span>
+                <div class="upload-progress" id="progress-${t.id}"></div>
+                <input type="file" id="file-${t.id}" style="display:none;" onchange="handleTaskUpload(event, '${t.id}')">
             </div>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-                <button class="upload-btn" onclick="uploadWork('${t.id}')" style="background:var(--accent); color:#000; border:none; padding:12px 24px; border-radius:12px; font-weight:800; cursor:pointer;">↑ SUBMIT WORK</button>
-                ${t.editorLink ? `<a href="${t.editorLink}" target="_blank" style="font-size:11px; color:var(--muted); text-align:center;">View Submission</a>` : ''}
+            
+            <div class="task-details">
+                <div style="font-size:11px; color:var(--accent); font-weight:800; margin-bottom:5px; letter-spacing:1px;">ID: #${t.id.slice(-6).toUpperCase()}</div>
+                <h4>${t.name}</h4>
+                <div style="font-size:13px; color:var(--muted);">Client: <span style="color:#fff;">${t.clientName}</span> | Due: <span style="color:#fff;">${t.deadline || 'TBA'}</span></div>
+                
+                <div class="task-links">
+                    <a href="${t.scriptLink || '#'}" target="_blank" class="link-btn">📜 Script</a>
+                    <a href="${t.rawAssets || '#'}" target="_blank" class="link-btn" style="color:var(--accent); border-color:var(--accent-glow);">🎬 Footage</a>
+                    ${t.editorLink ? `<a href="${t.editorLink}" target="_blank" class="link-btn" style="background:var(--accent); color:#000;">✓ View Upload</a>` : ''}
+                </div>
+            </div>
+
+            <div class="task-action">
+                <span class="status-badge">${t.currentPhase || 'Editing'}</span>
+                <div style="margin-top:12px; font-size:11px; color:var(--muted); font-weight:700;">PAYOUT: <span style="color:var(--accent);">$${t.editorFee || 0}</span></div>
             </div>
         </div>
     `).join('');
+}
+
+function triggerUpload(id) {
+    document.getElementById(`file-${id}`).click();
+}
+
+async function handleTaskUpload(event, projectId) {
+    const file = event.target.files[0];
+    if(!file) return;
+
+    const area = document.getElementById(`upload-${projectId}`);
+    const icon = document.getElementById(`icon-${projectId}`);
+    const progress = document.getElementById(`progress-${projectId}`);
+
+    area.classList.add('uploading');
+    icon.textContent = '...';
+
+    const storageRef = firebase.storage().ref(`edits/${projectId}/${file.name}`);
+    const uploadTask = storageRef.put(file);
+
+    uploadTask.on('state_changed', 
+        (snap) => {
+            const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+            progress.style.width = pct + '%';
+        }, 
+        (err) => {
+            alert("Upload failed!");
+            area.classList.remove('uploading');
+            icon.textContent = '+';
+        }, 
+        async () => {
+            const url = await uploadTask.snapshot.ref.getDownloadURL();
+            
+            // UPDATE PROJECT & MOVE TO SUPERVISION
+            await db.collection('projects').doc(projectId).update({
+                editorLink: url,
+                lastUploadAt: new Date().toISOString(),
+                currentPhase: 'Supervision', // Moving to Supervision Approval
+                status: 'Review',
+                progress: 57 // Based on 7 steps (Editing is step 3, Supervision is 4)
+            });
+
+            alert("Work uploaded & moved to Supervision! 🚀");
+            area.classList.remove('uploading');
+            icon.textContent = '✓';
+        }
+    );
 }
 
 function renderEarnings() {
     const list = document.getElementById('earnings-list');
     list.innerHTML = myTasks.map(t => `
         <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:15px 20px; font-size:14px;"><b>${t.name}</b></td>
-            <td style="padding:15px 20px;"><span class="status-badge" style="font-size:10px;">${t.status}</span></td>
-            <td style="padding:15px 20px; font-family:'JetBrains Mono'; font-weight:700; color:#22c55e;">$${t.editorFee}</td>
+            <td style="padding:24px; font-size:14px;"><b>${t.name}</b></td>
+            <td style="padding:24px;"><span class="status-badge">${t.currentPhase}</span></td>
+            <td style="padding:24px; font-weight:800; color:var(--accent);">$${t.editorFee || 0}</td>
         </tr>
     `).join('');
 }
 
 function calculateStats() {
-    const pending = myTasks.filter(t => t.status === 'Active').length;
+    const pending = myTasks.filter(t => t.currentPhase === 'Editing').length;
     const review = myTasks.filter(t => t.status === 'Review').length;
     const total = myTasks.reduce((s, t) => s + (t.editorFee || 0), 0);
 
@@ -114,23 +164,17 @@ function calculateStats() {
     document.getElementById('total-earned').textContent = '$' + total.toLocaleString();
 }
 
-async function uploadWork(projectId) {
-    const link = prompt("Paste your work link (Drive/Frame.io/etc):");
-    if(!link) return;
-    try {
-        await db.collection('projects').doc(projectId).update({
-            editorLink: link,
-            status: 'Review',
-            lastUploadAt: new Date().toISOString()
-        });
-        alert("Submitted for review! ✅");
-    } catch(e) { alert(e.message); }
-}
-
 // ─── INIT ───
 auth.onAuthStateChanged(user => {
-    if(user) checkUserAccess(user);
-    else document.getElementById('auth-overlay').style.display = 'flex';
+    if(user) {
+        // Update Sidebar Initials
+        const initials = user.displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        document.getElementById('user-initials').textContent = initials;
+        document.getElementById('user-name').textContent = user.displayName;
+        checkUserAccess(user);
+    } else {
+        document.getElementById('auth-overlay').style.display = 'flex';
+    }
 });
 
 // Sidebar Events
